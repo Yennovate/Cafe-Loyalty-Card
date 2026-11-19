@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Coffee Punch Card</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Segoe UI", system-ui, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(160deg, #3e2723, #5d4037);
+    padding: 20px;
+  }
+  .card {
+    background: #fffdf7;
+    border-radius: 18px;
+    box-shadow: 0 12px 40px rgba(0,0,0,.4);
+    padding: 36px;
+    max-width: 480px;
+    width: 100%;
+    text-align: center;
+  }
+  h1 { color: #4e342e; font-size: 1.6rem; margin-bottom: 4px; }
+  .sub { color: #8d6e63; font-size: .95rem; margin-bottom: 24px; }
+  .lookup { display: flex; gap: 10px; margin-bottom: 24px; }
+  .lookup input {
+    flex: 1;
+    padding: 12px 14px;
+    border: 2px solid #d7ccc8;
+    border-radius: 10px;
+    font-size: 1rem;
+    outline: none;
+  }
+  .lookup input:focus { border-color: #6d4c41; }
+  .lookup button {
+    background: #6d4c41; color: #fff;
+  }
+  .customer { display: none; }
+  .customer.show { display: block; }
+  .who {
+    background: #efe7de;
+    border-radius: 10px;
+    padding: 10px;
+    margin-bottom: 20px;
+    color: #4e342e;
+    font-weight: 600;
+    font-size: .95rem;
+  }
+  .who span { cursor: pointer; color: #8d6e63; font-weight: 400; text-decoration: underline; }
+  .stamps {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 14px;
+    margin-bottom: 22px;
+  }
+  .stamp {
+    aspect-ratio: 1;
+    border: 2px dashed #bcaaa4;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.7rem;
+    background: #faf6f0;
+    transition: all .25s ease;
+    user-select: none;
+  }
+  .stamp.filled {
+    border: 2px solid #6d4c41;
+    background: #efe0d3;
+    transform: scale(1.05);
+  }
+  .stamp.latest { animation: pop .3s ease; }
+  @keyframes pop { 50% { transform: scale(1.3); } }
+  .count { font-size: 1.1rem; color: #5d4037; margin-bottom: 18px; font-weight: 600; }
+  .free {
+    display: none;
+    background: #2e7d32;
+    color: #fff;
+    padding: 14px;
+    border-radius: 12px;
+    font-weight: 700;
+    font-size: 1.15rem;
+    margin-bottom: 18px;
+    animation: pop .4s ease;
+  }
+  .free.show { display: block; }
+  .buttons { display: flex; gap: 12px; justify-content: center; }
+  button {
+    border: none;
+    border-radius: 10px;
+    padding: 12px 22px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity .2s;
+  }
+  button:hover { opacity: .85; }
+  #add { background: #6d4c41; color: #fff; }
+  #reset { background: #e0dcd5; color: #4e342e; }
+  .hint { color: #a1887f; font-size: .85rem; margin-top: 16px; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>☕ Coffee Punch Card</h1>
+    <p class="sub">Buy 10 coffees, get 1 free</p>
+
+    <!-- Phone lookup -->
+    <div class="lookup" id="lookup">
+      <input id="phone" type="tel" placeholder="Customer phone number" maxlength="15">
+      <button id="find">Find</button>
+    </div>
+
+    <!-- Customer card -->
+    <div class="customer" id="customer">
+      <div class="who">📞 <b id="whoPhone"></b> — <span id="switch">switch customer</span></div>
+
+      <div class="free" id="freeMsg">🎉 Card full — your coffee is FREE!</div>
+
+      <div class="stamps" id="stamps"></div>
+      <p class="count" id="count"></p>
+
+      <div class="buttons">
+        <button id="add">+ Add Stamp</button>
+        <button id="reset">Redeem / Reset</button>
+      </div>
+    </div>
+
+    <p class="hint">Cards are saved in this browser by phone number.</p>
+  </div>
+
+<script>
+  const MAX = 10;
+  const STORE_KEY = 'coffeePunchCards';
+
+  let currentPhone = null;
+
+  const lookupBox = document.getElementById('lookup');
+  const phoneInput = document.getElementById('phone');
+  const customerBox = document.getElementById('customer');
+  const whoPhone = document.getElementById('whoPhone');
+  const grid = document.getElementById('stamps');
+  const countEl = document.getElementById('count');
+  const freeMsg = document.getElementById('freeMsg');
+  const addBtn = document.getElementById('add');
+
+  function loadAll() {
+    try { return JSON.parse(localStorage.getItem(STORE_KEY)) || {}; }
+    catch { return {}; }
+  }
+  function saveAll(cards) {
+    localStorage.setItem(STORE_KEY, JSON.stringify(cards));
+  }
+
+  function normalize(phone) {
+    return phone.replace(/\D/g, '');
+  }
+
+  function openCard(phone) {
+    const cards = loadAll();
+    if (!cards[phone]) cards[phone] = { stamps: 0, freeEarned: false };
+    saveAll(cards);
+    currentPhone = phone;
+    whoPhone.textContent = phone;
+    lookupBox.style.display = 'none';
+    customerBox.classList.add('show');
+    render();
+  }
+
+  function render() {
+    const card = loadAll()[currentPhone] || { stamps: 0 };
+    const n = card.stamps;
+    grid.innerHTML = '';
+    for (let i = 0; i < MAX; i++) {
+      const s = document.createElement('div');
+      s.className = 'stamp' + (i < n ? ' filled' : '') + (i === n - 1 ? ' latest' : '');
+      s.textContent = i < n ? '☕' : i + 1;
+      grid.appendChild(s);
+    }
+    countEl.textContent = n + ' / ' + MAX + ' stamps';
+    freeMsg.classList.toggle('show', n >= MAX);
+    addBtn.disabled = n >= MAX;
+    addBtn.style.opacity = n >= MAX ? .5 : 1;
+    addBtn.textContent = n >= MAX ? 'Card Complete' : '+ Add Stamp';
+  }
+
+  function saveCurrent(patch) {
+    const cards = loadAll();
+    cards[currentPhone] = Object.assign(cards[currentPhone] || { stamps: 0 }, patch);
+    saveAll(cards);
+  }
+
+  document.getElementById('find').addEventListener('click', () => {
+    const phone = normalize(phoneInput.value);
+    if (phone.length < 7) { alert('Please enter a valid phone number.'); return; }
+    openCard(phone);
+  });
+  phoneInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.getElementById('find').click();
+  });
+
+  addBtn.addEventListener('click', () => {
+    const card = loadAll()[currentPhone];
+    if (card.stamps < MAX) {
+      saveCurrent({ stamps: card.stamps + 1 });
+      render();
+    }
+  });
+
+  document.getElementById('reset').addEventListener('click', () => {
+    if (confirm('Redeem this card and start a new one?')) {
+      saveCurrent({ stamps: 0 });
+      render();
+    }
+  });
+
+  document.getElementById('switch').addEventListener('click', () => {
+    currentPhone = null;
+    phoneInput.value = '';
+    customerBox.classList.remove('show');
+    lookupBox.style.display = 'flex';
+    phoneInput.focus();
+  });
+
+  // Reopen the last customer on page load
+  const last = localStorage.getItem('coffeePunchLastCustomer');
+  if (last && loadAll()[last]) openCard(last);
+  document.addEventListener('click', e => {
+    // remember last customer whenever a card is open
+    if (currentPhone) localStorage.setItem('coffeePunchLastCustomer', currentPhone);
+  });
+</script>
+</body>
+</html>
